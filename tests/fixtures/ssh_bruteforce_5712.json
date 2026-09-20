@@ -1,0 +1,74 @@
+{
+    "timestamp": "2026-09-19T19:44:24.533-0500",
+    "rule": {
+        "level": 10,
+        "description": "sshd: brute force trying to get access to the system. Non existent user.",
+        "id": "5712",
+        "mitre": {
+            "id": [
+                "T1110"
+            ],
+            "tactic": [
+                "Credential Access"
+            ],
+            "technique": [
+                "Brute Force"
+            ]
+        },
+        "frequency": 8,
+        "firedtimes": 1,
+        "mail": false,
+        "groups": [
+            "syslog",
+            "sshd",
+            "authentication_failures"
+        ],
+        "gdpr": [
+            "IV_35.7.d",
+            "IV_32.2"
+        ],
+        "hipaa": [
+            "164.312.b"
+        ],
+        "nist_800_53": [
+            "SI.4",
+            "AU.14",
+            "AC.7"
+        ],
+        "pci_dss": [
+            "11.4",
+            "10.2.4",
+            "10.2.5"
+        ],
+        "tsc": [
+            "CC6.1",
+            "CC6.8",
+            "CC7.2",
+            "CC7.3"
+        ]
+    },
+    "agent": {
+        "id": "000",
+        "name": "ryanyi"
+    },
+    "manager": {
+        "name": "ryanyi"
+    },
+    "id": "1789865064.727199",
+    "previous_output": "Sep 20 00:44:21 ryanyi sshd-session[65900]: Failed password for invalid user nosuchuser from 192.168.64.2 port 52098 ssh2\nSep 20 00:44:21 ryanyi sshd-session[65902]: Invalid user nosuchuser from 192.168.64.2 port 48766\nSep 20 00:44:19 ryanyi sshd-session[65900]: Invalid user nosuchuser from 192.168.64.2 port 52098\nSep 20 00:44:18 ryanyi sshd-session[65898]: Failed password for invalid user nosuchuser from 192.168.64.2 port 52090 ssh2\nSep 20 00:44:15 ryanyi sshd-session[65896]: Failed password for invalid user nosuchuser from 192.168.64.2 port 52084 ssh2\nSep 20 00:44:16 ryanyi sshd-session[65898]: Invalid user nosuchuser from 192.168.64.2 port 52090\nSep 20 00:44:12 ryanyi sshd-session[65896]: Invalid user nosuchuser from 192.168.64.2 port 52084",
+    "full_log": "Sep 20 00:44:23 ryanyi sshd-session[65902]: Failed password for invalid user nosuchuser from 192.168.64.2 port 48766 ssh2",
+    "predecoder": {
+        "program_name": "sshd-session",
+        "timestamp": "Sep 20 00:44:23",
+        "hostname": "ryanyi"
+    },
+    "decoder": {
+        "parent": "sshd",
+        "name": "sshd"
+    },
+    "data": {
+        "srcip": "192.168.64.2",
+        "srcuser": "nosuchuser"
+    },
+    "location": "journald"
+}

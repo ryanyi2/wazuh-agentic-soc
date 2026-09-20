@@ -1,0 +1,79 @@
+{
+    "timestamp": "2026-09-19T19:44:34.543-0500",
+    "rule": {
+        "level": 5,
+        "description": "sshd: Attempt to login using a non-existent user",
+        "id": "5710",
+        "mitre": {
+            "id": [
+                "T1110.001",
+                "T1021.004"
+            ],
+            "tactic": [
+                "Credential Access",
+                "Lateral Movement"
+            ],
+            "technique": [
+                "Password Guessing",
+                "SSH"
+            ]
+        },
+        "firedtimes": 12,
+        "mail": false,
+        "groups": [
+            "syslog",
+            "sshd",
+            "authentication_failed",
+            "invalid_login"
+        ],
+        "gdpr": [
+            "IV_35.7.d",
+            "IV_32.2"
+        ],
+        "gpg13": [
+            "7.1"
+        ],
+        "hipaa": [
+            "164.312.b"
+        ],
+        "nist_800_53": [
+            "AU.14",
+            "AC.7",
+            "AU.6"
+        ],
+        "pci_dss": [
+            "10.2.4",
+            "10.2.5",
+            "10.6.1"
+        ],
+        "tsc": [
+            "CC6.1",
+            "CC6.8",
+            "CC7.2",
+            "CC7.3"
+        ]
+    },
+    "agent": {
+        "id": "000",
+        "name": "ryanyi"
+    },
+    "manager": {
+        "name": "ryanyi"
+    },
+    "id": "1789865074.731575",
+    "full_log": "Sep 20 00:44:32 ryanyi sshd-session[65917]: Failed password for invalid user nosuchuser from 192.168.64.2 port 59776 ssh2",
+    "predecoder": {
+        "program_name": "sshd-session",
+        "timestamp": "Sep 20 00:44:32",
+        "hostname": "ryanyi"
+    },
+    "decoder": {
+        "parent": "sshd",
+        "name": "sshd"
+    },
+    "data": {
+        "srcip": "192.168.64.2",
+        "srcuser": "nosuchuser"
+    },
+    "location": "journald"
+}
