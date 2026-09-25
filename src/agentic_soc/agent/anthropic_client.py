@@ -1,8 +1,8 @@
 """Anthropic adapter: implements the LLMClient interface using Claude.
 
-Isolates the vendor SDK so the rest of the codebase depends only on the small
-provider-agnostic types in agent.llm. Swapping providers means adding another
-file like this one, and changing nothing else.
+Translates the loop's provider-agnostic messages to and from the Anthropic
+Messages API, including the tool_use / tool_result threading a real tool call
+requires. Isolated so nothing else imports the vendor SDK.
 """
 
 from __future__ import annotations
@@ -16,19 +16,40 @@ from agentic_soc.agent.llm import LLMResponse, Message, ToolCall, ToolSpec
 
 
 def _to_anthropic(messages: Sequence[Message]) -> tuple[str, list[dict[str, Any]]]:
-    """Split system text out and turn the rest into Anthropic message dicts."""
     system_parts: list[str] = []
     conversation: list[dict[str, Any]] = []
     for msg in messages:
         if msg.role == "system":
             system_parts.append(msg.content)
-        else:
-            conversation.append({"role": msg.role, "content": msg.content})
+        elif msg.role == "user":
+            conversation.append({"role": "user", "content": msg.content})
+        elif msg.role == "assistant":
+            blocks: list[dict[str, Any]] = []
+            if msg.content:
+                blocks.append({"type": "text", "text": msg.content})
+            for call in msg.tool_calls:
+                blocks.append(
+                    {"type": "tool_use", "id": call.id, "name": call.name, "input": call.arguments}
+                )
+            conversation.append({"role": "assistant", "content": blocks})
+        elif msg.role == "tool":
+            block = {
+                "type": "tool_result",
+                "tool_use_id": msg.tool_call_id,
+                "content": msg.content,
+            }
+            if (
+                conversation
+                and conversation[-1]["role"] == "user"
+                and isinstance(conversation[-1]["content"], list)
+            ):
+                conversation[-1]["content"].append(block)
+            else:
+                conversation.append({"role": "user", "content": [block]})
     return "\n".join(system_parts), conversation
 
 
 def _from_anthropic(response: anthropic.types.Message) -> LLMResponse:
-    """Turn an Anthropic response into our provider-agnostic LLMResponse."""
     text_parts: list[str] = []
     tool_calls: list[ToolCall] = []
     for block in response.content:
@@ -36,11 +57,7 @@ def _from_anthropic(response: anthropic.types.Message) -> LLMResponse:
             text_parts.append(block.text)
         elif isinstance(block, anthropic.types.ToolUseBlock):
             tool_calls.append(
-                ToolCall(
-                    id=block.id,
-                    name=block.name,
-                    arguments=cast("dict[str, Any]", block.input),
-                )
+                ToolCall(id=block.id, name=block.name, arguments=cast("dict[str, Any]", block.input))
             )
     return LLMResponse(text="\n".join(text_parts) or None, tool_calls=tool_calls)
 

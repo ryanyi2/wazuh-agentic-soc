@@ -1,11 +1,10 @@
 """The bounded agent loop: think -> call a tool -> read result -> answer.
 
-The loop is synchronous and pure so it can be tested deterministically; the
-async worker offloads it with asyncio.to_thread. Two independent guards (a
-tool-call cap and a wall-clock deadline) guarantee it terminates. When the
-budget is exhausted or the model's answer can't be parsed, it returns a degraded
-verdict that escalates for human review — it never silently suppresses an alert
-it could not finish analysing.
+Synchronous and pure so it can be tested deterministically; the async worker
+offloads it with asyncio.to_thread. Two independent guards (a tool-call cap and
+a wall-clock deadline) guarantee termination. On budget exhaustion or an
+unparseable answer it returns a degraded verdict that escalates for human
+review — it never silently suppresses an alert it could not finish analysing.
 """
 
 from __future__ import annotations
@@ -75,10 +74,12 @@ def run_agent(
         response = llm.complete(messages, specs)
         if not response.tool_calls:
             return _parse_verdict(response.text)
+        messages.append(
+            Message(role="assistant", content=response.text or "", tool_calls=response.tool_calls)
+        )
         for call in response.tool_calls:
             if tool_calls_made >= budget.max_tool_calls:
                 return _degraded_verdict("Tool-call budget exhausted.")
             result = _dispatch(call, tools)
             tool_calls_made += 1
-            messages.append(Message(role="assistant", content=f"[tool_call {call.name}]"))
             messages.append(Message(role="tool", content=result, tool_call_id=call.id))

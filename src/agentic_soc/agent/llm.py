@@ -1,9 +1,8 @@
 """Provider-agnostic LLM interface for the agent loop.
 
 The loop is written against these small types, not against any vendor SDK. A
-concrete adapter (Anthropic, added later) translates them to and from a real
-API. A FakeLLM implements the same interface so the loop can be tested
-deterministically, with no API key, cost, or network.
+concrete adapter (Anthropic) translates them to and from a real API, and a
+FakeLLM implements the same interface for deterministic tests.
 """
 
 from __future__ import annotations
@@ -11,13 +10,6 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any, Protocol
-
-
-@dataclass
-class Message:
-    role: str  # "system" | "user" | "assistant" | "tool"
-    content: str
-    tool_call_id: str | None = None
 
 
 @dataclass
@@ -32,6 +24,14 @@ class ToolCall:
     id: str
     name: str
     arguments: dict[str, Any]
+
+
+@dataclass
+class Message:
+    role: str  # "system" | "user" | "assistant" | "tool"
+    content: str = ""
+    tool_calls: list[ToolCall] = field(default_factory=list)
+    tool_call_id: str | None = None
 
 
 @dataclass
