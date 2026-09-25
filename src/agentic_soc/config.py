@@ -1,7 +1,7 @@
 """Runtime configuration, loaded from environment variables or a .env file.
 
-Every setting is prefixed AGENTIC_SOC_ (e.g. AGENTIC_SOC_HMAC_SECRET). Secrets
-never live in code, so the same image runs in dev and prod with different env.
+Every setting is prefixed AGENTIC_SOC_. Secrets never live in code, so the same
+image runs in dev and prod with different env.
 """
 
 from __future__ import annotations
@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     hmac_secret: str = "change-me"
     # Minimum Wazuh rule level this service will analyze.
     min_rule_level: int = 9
+    # Anthropic API key and model for the agent.
+    anthropic_api_key: str = ""
+    model: str = "claude-haiku-4-5"
+    max_tokens: int = 2048
 
 
 def get_settings() -> Settings:

@@ -48,8 +48,11 @@ def _dispatch(call: ToolCall, tools: dict[str, Tool]) -> str:
 def _parse_verdict(text: str | None) -> Verdict:
     if not text:
         return _degraded_verdict("Model returned no final answer.")
+    start, end = text.find("{"), text.rfind("}")
+    if start == -1 or end == -1 or end < start:
+        return _degraded_verdict("Model's final answer contained no JSON object.")
     try:
-        return Verdict.model_validate_json(text)
+        return Verdict.model_validate_json(text[start : end + 1])
     except ValueError:
         return _degraded_verdict("Model's final answer was not a valid verdict.")
 

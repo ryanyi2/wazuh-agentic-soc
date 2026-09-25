@@ -2,16 +2,19 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from agentic_soc.agent.llm import FakeLLM, LLMResponse
 from agentic_soc.api import create_app
 from agentic_soc.auth import sign
 from agentic_soc.config import Settings
 
 FIXTURES = Path(__file__).parent / "fixtures"
 SECRET = "test-secret"
+VERDICT_JSON = '{"risk_level":"low","confidence":0.5,"summary":"test","root_cause":"test"}'
 
 
 def _client() -> TestClient:
-    return TestClient(create_app(Settings(hmac_secret=SECRET, min_rule_level=9)))
+    llm = FakeLLM(responses=[LLMResponse(text=VERDICT_JSON)])
+    return TestClient(create_app(Settings(hmac_secret=SECRET, min_rule_level=9), llm=llm, tools={}))
 
 
 def _body(name: str) -> bytes:
