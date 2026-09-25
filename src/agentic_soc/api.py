@@ -17,6 +17,7 @@ from fastapi import FastAPI, Header, HTTPException, Request
 
 from agentic_soc.auth import verify
 from agentic_soc.config import Settings, get_settings
+from agentic_soc.logging_config import configure_logging
 from agentic_soc.models import Alert
 
 logger = logging.getLogger(__name__)
@@ -52,6 +53,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
+    configure_logging()
     settings = settings or get_settings()
     app = FastAPI(title="Agentic SOC Analyst", lifespan=lifespan)
     app.state.settings = settings
