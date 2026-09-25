@@ -1,0 +1,9 @@
+<!--
+  Add inside <ossec_config> in /var/ossec/etc/ossec.conf, then restart the
+  manager. Tells Wazuh to read the agentic-soc verdict log as JSON. The path
+  must match AGENTIC_SOC_VERDICT_LOG_PATH in the service .env.
+-->
+<localfile>
+  <log_format>json</log_format>
+  <location>/var/log/agentic-soc/verdicts.json</location>
+</localfile>
