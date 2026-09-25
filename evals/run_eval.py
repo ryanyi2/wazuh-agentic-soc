@@ -81,6 +81,10 @@ def main() -> int:
         f"(per run {min(per_run):.0%}-{max(per_run):.0%})"
     )
     print(f"suppressed:            {pooled.suppressed} of {pooled.total}")
+    print(
+        f"benign cleared:        {pooled.correct_suppressions} of {pooled.benign_total}  "
+        f"(recall {pooled.suppression_recall:.2f})"
+    )
     print(f"suppression precision: {pooled.suppression_precision:.2f}")
     print(f"missed true positives: {pooled.missed_threats}")
     print(f"caught threats:        {pooled.caught_threats}")

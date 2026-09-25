@@ -22,6 +22,7 @@ def test_suppressing_a_real_threat_is_counted_as_missed() -> None:
     assert report.missed_threats == 1  # suppressed the real attack: the cardinal error
     assert report.suppression_precision == 0.5
     assert report.triage_reduction == 1.0
+    assert report.suppression_recall == 1.0
 
 
 def test_escalating_everything_misses_no_threats() -> None:
@@ -34,3 +35,4 @@ def test_escalating_everything_misses_no_threats() -> None:
     assert report.caught_threats == 1
     assert report.suppressed == 0
     assert report.suppression_precision == 1.0
+    assert report.suppression_recall == 0.0

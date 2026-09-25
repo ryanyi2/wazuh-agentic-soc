@@ -58,6 +58,7 @@ class Report:
     correct_suppressions: int
     missed_threats: int
     caught_threats: int
+    benign_total: int
     mean_latency_seconds: float
 
     @property
@@ -65,6 +66,12 @@ class Report:
         if self.suppressed == 0:
             return 1.0
         return self.correct_suppressions / self.suppressed
+
+    @property
+    def suppression_recall(self) -> float:
+        if self.benign_total == 0:
+            return 0.0
+        return self.correct_suppressions / self.benign_total
 
     @property
     def triage_reduction(self) -> float:
@@ -79,6 +86,7 @@ def summarize(results: Sequence[CaseResult]) -> Report:
     correct = sum(1 for r in results if r.suppressed and r.is_benign)
     missed = sum(1 for r in results if r.missed_threat)
     caught = sum(1 for r in results if not r.suppressed and not r.is_benign)
+    benign_total = sum(1 for r in results if r.is_benign)
     mean_latency = sum(r.latency_seconds for r in results) / total if total else 0.0
     return Report(
         total=total,
@@ -86,6 +94,7 @@ def summarize(results: Sequence[CaseResult]) -> Report:
         correct_suppressions=correct,
         missed_threats=missed,
         caught_threats=caught,
+        benign_total=benign_total,
         mean_latency_seconds=mean_latency,
     )
 
