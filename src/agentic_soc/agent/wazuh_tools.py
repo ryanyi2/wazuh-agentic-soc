@@ -46,7 +46,10 @@ def make_search_alerts_tool(indexer: IndexerClient) -> Tool:
             "properties": {
                 "srcip": {"type": "string", "description": "Source IP to filter by"},
                 "agent_id": {"type": "string", "description": "Wazuh agent id, e.g. 000"},
-                "hours": {"type": "integer", "description": "Look back this many hours (default 24)"},
+                "hours": {
+                    "type": "integer",
+                    "description": "Look back this many hours (default 24)",
+                },
             },
         },
         handler=handler,

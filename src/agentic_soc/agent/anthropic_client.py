@@ -56,14 +56,18 @@ def _from_anthropic(response: anthropic.types.Message) -> LLMResponse:
         if isinstance(block, anthropic.types.TextBlock):
             text_parts.append(block.text)
         elif isinstance(block, anthropic.types.ToolUseBlock):
-            tool_calls.append(
-                ToolCall(id=block.id, name=block.name, arguments=cast("dict[str, Any]", block.input))
-            )
+            arguments = cast("dict[str, Any]", block.input)
+            tool_calls.append(ToolCall(id=block.id, name=block.name, arguments=arguments))
     return LLMResponse(text="\n".join(text_parts) or None, tool_calls=tool_calls)
 
 
 class AnthropicLLM:
-    """LLMClient backed by the Anthropic Messages API (default: Claude Haiku 4.5)."""
+    """LLMClient backed by the Anthropic Messages API (default: Claude Haiku 4.5).
+
+    Current Claude models don't accept sampling parameters such as temperature,
+    so the same alert can get a different verdict on different runs. The eval
+    harness measures that variation with repeated runs instead of hiding it.
+    """
 
     def __init__(
         self, api_key: str, model: str = "claude-haiku-4-5", max_tokens: int = 2048

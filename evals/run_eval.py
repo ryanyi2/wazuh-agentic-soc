@@ -1,11 +1,15 @@
 """Run the agent over a labelled dataset and print per-case and summary results.
 
-Usage: python evals/run_eval.py [path/to/dataset.jsonl]
+Usage:
+    python evals/run_eval.py [dataset.jsonl] [--repeat N]
+
+LLM output can vary between runs, so --repeat runs every case N times and
+reports pooled metrics plus the per-run spread, instead of trusting one run.
 """
 
 from __future__ import annotations
 
-import sys
+import argparse
 from pathlib import Path
 
 from agentic_soc.agent.anthropic_client import AnthropicLLM
@@ -22,15 +26,21 @@ def _outcome(result: CaseResult) -> str:
     if result.missed_threat:
         return "MISSED THREAT"
     if result.is_benign and not result.suppressed:
-        return "noisy: benign escalated"
+        return "noisy"
     return "ok"
 
 
 def main() -> int:
-    dataset = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("evals/dataset.jsonl")
-    cases = load_cases(dataset)
+    parser = argparse.ArgumentParser(description="Evaluate the agent on a labelled dataset.")
+    parser.add_argument("dataset", nargs="?", default="evals/dataset.jsonl")
+    parser.add_argument("--repeat", type=int, default=1, help="run every case N times")
+    args = parser.parse_args()
+
+    cases = load_cases(Path(args.dataset))
     settings = get_settings()
-    llm = AnthropicLLM(settings.anthropic_api_key, settings.model, settings.max_tokens)
+    llm = AnthropicLLM(
+        settings.anthropic_api_key, settings.model, settings.max_tokens
+    )
 
     tools = {}
     if settings.indexer_url:
@@ -45,24 +55,36 @@ def main() -> int:
     def run(alert: Alert) -> Verdict:
         return run_agent(alert, llm, tools)
 
-    print(f"prompt {PROMPT_VERSION} | model {settings.model} | {len(cases)} cases\n")
-    results = run_cases(cases, run)
-    for r in results:
-        v = r.verdict
-        print(
-            f"{r.case.label.value:<15} rule {r.case.alert.rule.id:<5} -> "
-            f"{v.risk_level.value:<15} conf={v.confidence:.2f}  [{_outcome(r)}]"
-        )
-        print(f"    {v.summary}")
+    print(
+        f"prompt {PROMPT_VERSION} | model {settings.model} | "
+        f"{len(cases)} cases x {args.repeat} runs\n"
+    )
+    runs = [run_cases(cases, run) for _ in range(args.repeat)]
 
-    report = summarize(results)
+    for i, case in enumerate(cases):
+        results = [run_results[i] for run_results in runs]
+        suppressed = sum(1 for r in results if r.suppressed)
+        outcomes = ", ".join(sorted({_outcome(r) for r in results}))
+        verdicts = ", ".join(r.verdict.risk_level.value for r in results)
+        print(
+            f"{case.label.value:<15} rule {case.alert.rule.id:<5} "
+            f"suppressed {suppressed}/{args.repeat}  [{outcomes}]"
+        )
+        print(f"    verdicts: {verdicts}")
+        print(f"    e.g.: {results[0].verdict.summary}")
+
+    pooled = summarize([r for run_results in runs for r in run_results])
+    per_run = [summarize(run_results).triage_reduction for run_results in runs]
     print()
-    print(f"triage reduction:      {report.triage_reduction:.0%}")
-    print(f"suppressed:            {report.suppressed} of {report.total}")
-    print(f"suppression precision: {report.suppression_precision:.2f}")
-    print(f"missed true positives: {report.missed_threats}")
-    print(f"caught threats:        {report.caught_threats}")
-    print(f"mean latency:          {report.mean_latency_seconds:.1f}s")
+    print(
+        f"triage reduction:      {pooled.triage_reduction:.0%}  "
+        f"(per run {min(per_run):.0%}-{max(per_run):.0%})"
+    )
+    print(f"suppressed:            {pooled.suppressed} of {pooled.total}")
+    print(f"suppression precision: {pooled.suppression_precision:.2f}")
+    print(f"missed true positives: {pooled.missed_threats}")
+    print(f"caught threats:        {pooled.caught_threats}")
+    print(f"mean latency:          {pooled.mean_latency_seconds:.1f}s")
     return 0
 
 
