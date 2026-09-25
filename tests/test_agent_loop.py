@@ -30,8 +30,8 @@ def _alert() -> Alert:
 
 
 def _search_tool(recorder):
-    def handler(args):
-        recorder.append(args)
+    def handler(args, alert):
+        recorder.append((args, alert.rule.id))
         return "3 similar alerts in the last hour from the same IP."
 
     return Tool(
@@ -58,7 +58,8 @@ def test_agent_investigates_then_returns_verdict() -> None:
     verdict = run_agent(_alert(), llm, tools)
     assert verdict.risk_level is RiskLevel.HIGH
     assert verdict.requires_attention is True
-    assert recorder == [{"srcip": "192.168.64.2"}]  # the tool actually ran
+    # The tool ran with the model's arguments and the alert under investigation.
+    assert recorder == [({"srcip": "192.168.64.2"}, "5712")]
 
 
 def test_tool_call_budget_forces_degraded_verdict() -> None:

@@ -41,12 +41,12 @@ def _degraded_verdict(reason: str) -> Verdict:
     )
 
 
-def _dispatch(call: ToolCall, tools: dict[str, Tool]) -> str:
+def _dispatch(call: ToolCall, tools: dict[str, Tool], alert: Alert) -> str:
     tool = tools.get(call.name)
     if tool is None:
         return f"error: unknown tool {call.name!r}"
     try:
-        return tool.run(call.arguments)
+        return tool.run(call.arguments, alert)
     except Exception as exc:  # a tool failure must not crash the loop
         return f"error: {exc}"
 
@@ -90,7 +90,7 @@ def run_agent(
         for call in response.tool_calls:
             if tool_calls_made >= budget.max_tool_calls:
                 return _degraded_verdict("Tool-call budget exhausted.")
-            result = _dispatch(call, tools)
+            result = _dispatch(call, tools, alert)
             tool_calls_made += 1
             messages.append(Message(role="tool", content=result, tool_call_id=call.id))
 

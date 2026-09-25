@@ -14,6 +14,8 @@ untrusted input at the prompt layer, never trusted to steer the analyzer.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -85,6 +87,19 @@ class Alert(BaseModel):
     def source_ip(self) -> str | None:
         """Source IP, if the decoder extracted one."""
         return self.data.srcip if self.data else None
+
+    @property
+    def occurred_at(self) -> datetime | None:
+        """When the alert fired, in UTC. None if the timestamp is missing or unreadable."""
+        if not self.timestamp:
+            return None
+        try:
+            parsed = datetime.fromisoformat(self.timestamp)
+        except ValueError:
+            return None
+        if parsed.tzinfo is None:
+            return None  # no offset: refuse to guess a timezone
+        return parsed.astimezone(UTC)
 
     @property
     def mitre_techniques(self) -> list[str]:

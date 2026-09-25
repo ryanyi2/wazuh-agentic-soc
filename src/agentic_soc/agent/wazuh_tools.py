@@ -7,30 +7,35 @@ from typing import Any
 
 from agentic_soc.agent.tools import Tool
 from agentic_soc.clients.indexer import IndexerClient
+from agentic_soc.models import Alert
 
 logger = logging.getLogger(__name__)
 
 
 def make_search_alerts_tool(indexer: IndexerClient) -> Tool:
-    def handler(arguments: dict[str, Any]) -> str:
+    def handler(arguments: dict[str, Any], alert: Alert) -> str:
         srcip = arguments.get("srcip")
         agent_id = arguments.get("agent_id")
         hours = int(arguments.get("hours", 24))
-        alerts = indexer.search_alerts(srcip=srcip, agent_id=agent_id, hours=hours)
+        # The window ends when the alert fired, not now, so a replayed alert
+        # never sees events that happened after it. Not a model argument.
+        until = alert.occurred_at
+        alerts = indexer.search_alerts(srcip=srcip, agent_id=agent_id, hours=hours, until=until)
         logger.info(
-            "tool search_alerts srcip=%s agent_id=%s hours=%s -> %d hits",
+            "tool search_alerts srcip=%s agent_id=%s hours=%s until=%s -> %d hits",
             srcip,
             agent_id,
             hours,
+            until.isoformat() if until else "now",
             len(alerts),
         )
         if not alerts:
             return "No matching alerts found in the window."
         lines: list[str] = []
-        for alert in alerts:
-            rule = alert.get("rule", {})
+        for hit in alerts:
+            rule = hit.get("rule", {})
             lines.append(
-                f"- {alert.get('timestamp', '?')} rule {rule.get('id')} "
+                f"- {hit.get('timestamp', '?')} rule {rule.get('id')} "
                 f"(level {rule.get('level')}): {rule.get('description')}"
             )
         return f"Found {len(alerts)} alert(s):\n" + "\n".join(lines)
@@ -38,8 +43,9 @@ def make_search_alerts_tool(indexer: IndexerClient) -> Tool:
     return Tool(
         name="search_alerts",
         description=(
-            "Search recent Wazuh alerts to investigate context. Filter by source "
-            "IP, Wazuh agent id, and/or a look-back window in hours."
+            "Search the Wazuh alerts that fired in the hours before the alert under "
+            "investigation. Filter by source IP and/or Wazuh agent id, and set how "
+            "many hours to look back."
         ),
         input_schema={
             "type": "object",
@@ -48,7 +54,7 @@ def make_search_alerts_tool(indexer: IndexerClient) -> Tool:
                 "agent_id": {"type": "string", "description": "Wazuh agent id, e.g. 000"},
                 "hours": {
                     "type": "integer",
-                    "description": "Look back this many hours (default 24)",
+                    "description": "Hours to look back from when the alert fired (default 24)",
                 },
             },
         },

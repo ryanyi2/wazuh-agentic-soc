@@ -8,6 +8,7 @@ guarantee is enforced by this class's surface, not by trust.
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from typing import Any
 
 import httpx
@@ -39,8 +40,9 @@ class IndexerClient:
         rule_id: str | None = None,
         hours: int = 24,
         size: int = 10,
+        until: datetime | None = None,
     ) -> list[dict[str, Any]]:
-        must: list[dict[str, Any]] = [{"range": {"timestamp": {"gte": f"now-{hours}h"}}}]
+        must: list[dict[str, Any]] = [{"range": {"timestamp": _window(hours, until)}}]
         if srcip:
             must.append({"term": {"data.srcip": srcip}})
         if agent_id:
@@ -56,3 +58,19 @@ class IndexerClient:
         response.raise_for_status()
         hits = response.json().get("hits", {}).get("hits", [])
         return [hit.get("_source", {}) for hit in hits]
+
+
+def _window(hours: int, until: datetime | None) -> dict[str, str]:
+    """The `hours` before `until`, or before now when no anchor is given.
+
+    Anchoring matters when replaying an old alert: a window relative to now
+    would include events that happened after the alert fired.
+    """
+    if until is None:
+        return {"gte": f"now-{hours}h"}
+    start = until - timedelta(hours=hours)
+    return {
+        "gte": start.isoformat(timespec="milliseconds"),
+        "lte": until.isoformat(timespec="milliseconds"),
+        "format": "strict_date_optional_time",
+    }
