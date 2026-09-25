@@ -65,3 +65,49 @@ At that rate, 1,000 alerts a day costs about $4.90 a day. Prompt caching was
 considered and not used: Claude Haiku 4.5 only caches prompt prefixes of at
 least 4,096 tokens, and an entire request here averages under 3,000 tokens.
 The meter reported 0 cached tokens, which confirms it.
+
+## Held-out results
+
+`python evals/run_eval.py evals/holdout.jsonl --repeat 3`: 14 real lab alerts
+never used for tuning (6 attacks from three separate brute-force bursts, 8 benign
+alerts of types the development set never contained), 42 analyses.
+
+| Metric | Result |
+|---|---|
+| Missed threats | 0 of 18 attack analyses |
+| Precision when clearing | 1.00 (14 of 14 clears were benign) |
+| Benign alerts cleared | 14 of 24 (0.58) |
+| Triage reduction | 33% (per run 29-43%) |
+| Cost per alert | $0.0050 (2,947 input / 406 output tokens) |
+| Mean latency | 5.1s |
+
+Development-set recall was 1.00; held-out recall is 0.58. The gap is expected:
+the development set's benign cases were all one kind of event and the context
+file was written with them in view, while the held-out benign cases were new types.
+
+### What the held-out run showed
+
+- Safety held on unseen data: every attack was flagged in every run, and every
+  alert the agent cleared was benign.
+- The admin-account rule has a cost. A local password typo (no source IP) was
+  raised to medium in all 3 runs because the rule treats a missing source as
+  untrusted. The model itself wanted to clear it.
+- Look-ahead leak in replay. The search tool looks back from the current time,
+  not from the alert's own time. Replaying a Sep 19 rootcheck alert on Sep 25 let
+  the agent see brute-force alerts from Sep 24, and it concluded the host had been
+  compromised (critical in all 3 runs). Live alerts are analysed seconds after
+  they fire, so this only affects replays. It biases the eval toward escalation,
+  so these numbers are conservative.
+- Unfamiliar admin events are unstable: a new service group and a package removal
+  were each cleared in 1 of 3 runs and rated high in the other 2.
+- The agent's summary exposed a labelling error: the first-time sudo alert came
+  from kali-vm, not the manager. The label (benign) was right; the reason was corrected.
+
+### Held-out limits
+
+- 14 cases. All six attacks are SSH brute force, the only attack run in the lab.
+- Most benign held-out alerts are below the level-9 forwarding threshold, so in
+  production they would not reach the agent. A clean lab produces few benign
+  level-9+ alerts.
+- Any change made because of these results (for example new context entries for
+  installer activity) must be measured on a new held-out set.
