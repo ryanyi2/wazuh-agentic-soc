@@ -27,6 +27,8 @@ class Settings(BaseSettings):
     indexer_password: str = ""
     indexer_verify_tls: bool = False
 
+    context_path: str = "context/infrastructure.yaml"
+
 
 def get_settings() -> Settings:
     return Settings()

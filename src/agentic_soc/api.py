@@ -1,8 +1,9 @@
 """FastAPI ingestion service.
 
 The endpoint authenticates, validates, enqueues, and returns 202 in
-milliseconds. A background worker runs the bounded agent loop, offloaded to a
-thread so the event loop stays free.
+milliseconds. A background worker runs the full analysis pipeline (environment
+facts -> bounded agent -> policy floors), offloaded to a thread so the event
+loop stays free.
 """
 
 from __future__ import annotations
@@ -11,17 +12,19 @@ import asyncio
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Header, HTTPException, Request
 
 from agentic_soc.agent.anthropic_client import AnthropicLLM
 from agentic_soc.agent.llm import LLMClient
-from agentic_soc.agent.loop import run_agent
+from agentic_soc.agent.loop import analyze_alert
 from agentic_soc.agent.tools import Tool
 from agentic_soc.agent.wazuh_tools import make_search_alerts_tool
 from agentic_soc.auth import verify
 from agentic_soc.clients.indexer import IndexerClient
 from agentic_soc.config import Settings, get_settings
+from agentic_soc.context import EnvironmentContext, load_context
 from agentic_soc.logging_config import configure_logging
 from agentic_soc.models import Alert
 
@@ -40,16 +43,32 @@ def _build_default_tools(settings: Settings) -> dict[str, Tool]:
     return {"search_alerts": make_search_alerts_tool(indexer)}
 
 
-async def _worker(queue: asyncio.Queue[Alert], llm: LLMClient, tools: dict[str, Tool]) -> None:
+def _load_default_context(settings: Settings) -> EnvironmentContext | None:
+    path = Path(settings.context_path)
+    if not settings.context_path or not path.is_file():
+        logger.warning("no environment context at %r; running without it", settings.context_path)
+        return None
+    context = load_context(path)
+    logger.info("loaded environment context from %s (%d policies)", path, len(context.policies))
+    return context
+
+
+async def _worker(
+    queue: asyncio.Queue[Alert],
+    llm: LLMClient,
+    tools: dict[str, Tool],
+    context: EnvironmentContext | None,
+) -> None:
     while True:
         alert = await queue.get()
         try:
-            verdict = await asyncio.to_thread(run_agent, alert, llm, tools)
+            verdict = await asyncio.to_thread(analyze_alert, alert, llm, tools, context)
             logger.info(
-                "verdict rule=%s risk=%s confidence=%.2f summary=%s",
+                "verdict rule=%s risk=%s confidence=%.2f policies=%s summary=%s",
                 alert.rule.id,
                 verdict.risk_level.value,
                 verdict.confidence,
+                ",".join(verdict.applied_policies) or "-",
                 verdict.summary,
             )
         except Exception:
@@ -66,12 +85,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         model=settings.model,
         max_tokens=settings.max_tokens,
     )
-    tools: dict[str, Tool] = app.state.tools
+    tools: dict[str, Tool] | None = app.state.tools
     if tools is None:
         tools = _build_default_tools(settings)
+    context: EnvironmentContext | None = app.state.context
+    if context is None:
+        context = _load_default_context(settings)
     queue: asyncio.Queue[Alert] = asyncio.Queue()
     app.state.queue = queue
-    task = asyncio.create_task(_worker(queue, llm, tools))
+    task = asyncio.create_task(_worker(queue, llm, tools, context))
     try:
         yield
     finally:
@@ -82,6 +104,7 @@ def create_app(
     settings: Settings | None = None,
     llm: LLMClient | None = None,
     tools: dict[str, Tool] | None = None,
+    context: EnvironmentContext | None = None,
 ) -> FastAPI:
     configure_logging()
     settings = settings or get_settings()
@@ -89,6 +112,7 @@ def create_app(
     app.state.settings = settings
     app.state.llm = llm
     app.state.tools = tools
+    app.state.context = context
 
     @app.get("/health")
     async def health() -> dict[str, str]:

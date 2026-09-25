@@ -1,10 +1,12 @@
 """Run the agent over a labelled dataset and print per-case and summary results.
 
 Usage:
-    python evals/run_eval.py [dataset.jsonl] [--repeat N]
+    python evals/run_eval.py [dataset.jsonl] [--repeat N] [--no-context]
 
-LLM output can vary between runs, so --repeat runs every case N times and
-reports pooled metrics plus the per-run spread, instead of trusting one run.
+Runs the same pipeline as the live service (environment facts -> agent ->
+policy floors). LLM output can vary between runs, so --repeat runs every case
+N times and reports pooled metrics plus the per-run spread. --no-context runs
+without the environment context file, for a with/without comparison.
 """
 
 from __future__ import annotations
@@ -13,11 +15,12 @@ import argparse
 from pathlib import Path
 
 from agentic_soc.agent.anthropic_client import AnthropicLLM
-from agentic_soc.agent.loop import run_agent
+from agentic_soc.agent.loop import analyze_alert
 from agentic_soc.agent.prompt import PROMPT_VERSION
 from agentic_soc.agent.wazuh_tools import make_search_alerts_tool
 from agentic_soc.clients.indexer import IndexerClient
 from agentic_soc.config import get_settings
+from agentic_soc.context import EnvironmentContext, load_context
 from agentic_soc.evaluation import CaseResult, load_cases, run_cases, summarize
 from agentic_soc.models import Alert, Verdict
 
@@ -34,13 +37,14 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Evaluate the agent on a labelled dataset.")
     parser.add_argument("dataset", nargs="?", default="evals/dataset.jsonl")
     parser.add_argument("--repeat", type=int, default=1, help="run every case N times")
+    parser.add_argument(
+        "--no-context", action="store_true", help="run without the environment context file"
+    )
     args = parser.parse_args()
 
     cases = load_cases(Path(args.dataset))
     settings = get_settings()
-    llm = AnthropicLLM(
-        settings.anthropic_api_key, settings.model, settings.max_tokens
-    )
+    llm = AnthropicLLM(settings.anthropic_api_key, settings.model, settings.max_tokens)
 
     tools = {}
     if settings.indexer_url:
@@ -52,11 +56,17 @@ def main() -> int:
         )
         tools = {"search_alerts": make_search_alerts_tool(indexer)}
 
-    def run(alert: Alert) -> Verdict:
-        return run_agent(alert, llm, tools)
+    context: EnvironmentContext | None = None
+    context_path = Path(settings.context_path)
+    if not args.no_context and context_path.is_file():
+        context = load_context(context_path)
 
+    def run(alert: Alert) -> Verdict:
+        return analyze_alert(alert, llm, tools, context)
+
+    context_label = str(context_path) if context is not None else "none"
     print(
-        f"prompt {PROMPT_VERSION} | model {settings.model} | "
+        f"prompt {PROMPT_VERSION} | model {settings.model} | context {context_label} | "
         f"{len(cases)} cases x {args.repeat} runs\n"
     )
     runs = [run_cases(cases, run) for _ in range(args.repeat)]
@@ -66,11 +76,14 @@ def main() -> int:
         suppressed = sum(1 for r in results if r.suppressed)
         outcomes = ", ".join(sorted({_outcome(r) for r in results}))
         verdicts = ", ".join(r.verdict.risk_level.value for r in results)
+        policies = sorted({p for r in results for p in r.verdict.applied_policies})
         print(
             f"{case.label.value:<15} rule {case.alert.rule.id:<5} "
             f"suppressed {suppressed}/{args.repeat}  [{outcomes}]"
         )
         print(f"    verdicts: {verdicts}")
+        if policies:
+            print(f"    policies: {', '.join(policies)}")
         print(f"    e.g.: {results[0].verdict.summary}")
 
     pooled = summarize([r for run_results in runs for r in run_results])
