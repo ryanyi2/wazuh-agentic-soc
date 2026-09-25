@@ -1,0 +1,81 @@
+"""FastAPI ingestion service.
+
+Design contract: this endpoint must return in milliseconds. Wazuh's integrator
+times out in ~10s and retries, while the agent takes far longer, so the endpoint
+only authenticates, validates, enqueues, and returns 202. All analysis happens
+asynchronously on a background worker.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI, Header, HTTPException, Request
+
+from agentic_soc.auth import verify
+from agentic_soc.config import Settings, get_settings
+from agentic_soc.models import Alert
+
+logger = logging.getLogger(__name__)
+
+
+async def _worker(queue: asyncio.Queue[Alert]) -> None:
+    """Placeholder worker: drains the queue and logs each alert.
+
+    The bounded agent loop that investigates each alert is added in a later
+    phase. Its only job here is to prove the async hand-off works and never
+    blocks the ingest endpoint.
+    """
+    while True:
+        alert = await queue.get()
+        logger.info(
+            "dequeued alert rule=%s level=%s agent=%s",
+            alert.rule.id,
+            alert.rule.level,
+            alert.agent.id,
+        )
+        queue.task_done()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    queue: asyncio.Queue[Alert] = asyncio.Queue()
+    app.state.queue = queue
+    task = asyncio.create_task(_worker(queue))
+    try:
+        yield
+    finally:
+        task.cancel()
+
+
+def create_app(settings: Settings | None = None) -> FastAPI:
+    settings = settings or get_settings()
+    app = FastAPI(title="Agentic SOC Analyst", lifespan=lifespan)
+    app.state.settings = settings
+
+    @app.get("/health")
+    async def health() -> dict[str, str]:
+        return {"status": "ok"}
+
+    @app.post("/v1/alerts", status_code=202)
+    async def ingest(request: Request, x_signature: str = Header(default="")) -> dict[str, str]:
+        body = await request.body()
+        if not verify(body, settings.hmac_secret, x_signature):
+            raise HTTPException(status_code=401, detail="invalid signature")
+        try:
+            alert = Alert.model_validate_json(body)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail="invalid alert") from exc
+        # Defence in depth: the hook also filters by level, but re-check here.
+        if alert.rule.level < settings.min_rule_level:
+            return {"status": "skipped"}
+        await request.app.state.queue.put(alert)
+        return {"status": "accepted"}
+
+    return app
+
+
+app = create_app()
