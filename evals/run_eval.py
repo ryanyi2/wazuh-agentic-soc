@@ -1,4 +1,4 @@
-"""Run the agent over a labelled dataset and print an evaluation report.
+"""Run the agent over a labelled dataset and print per-case and summary results.
 
 Usage: python evals/run_eval.py [path/to/dataset.jsonl]
 """
@@ -10,11 +10,20 @@ from pathlib import Path
 
 from agentic_soc.agent.anthropic_client import AnthropicLLM
 from agentic_soc.agent.loop import run_agent
+from agentic_soc.agent.prompt import PROMPT_VERSION
 from agentic_soc.agent.wazuh_tools import make_search_alerts_tool
 from agentic_soc.clients.indexer import IndexerClient
 from agentic_soc.config import get_settings
-from agentic_soc.evaluation import evaluate, load_cases
+from agentic_soc.evaluation import CaseResult, load_cases, run_cases, summarize
 from agentic_soc.models import Alert, Verdict
+
+
+def _outcome(result: CaseResult) -> str:
+    if result.missed_threat:
+        return "MISSED THREAT"
+    if result.is_benign and not result.suppressed:
+        return "noisy: benign escalated"
+    return "ok"
 
 
 def main() -> int:
@@ -36,9 +45,20 @@ def main() -> int:
     def run(alert: Alert) -> Verdict:
         return run_agent(alert, llm, tools)
 
-    report = evaluate(cases, run)
-    print(f"cases:                 {report.total}")
+    print(f"prompt {PROMPT_VERSION} | model {settings.model} | {len(cases)} cases\n")
+    results = run_cases(cases, run)
+    for r in results:
+        v = r.verdict
+        print(
+            f"{r.case.label.value:<15} rule {r.case.alert.rule.id:<5} -> "
+            f"{v.risk_level.value:<15} conf={v.confidence:.2f}  [{_outcome(r)}]"
+        )
+        print(f"    {v.summary}")
+
+    report = summarize(results)
+    print()
     print(f"triage reduction:      {report.triage_reduction:.0%}")
+    print(f"suppressed:            {report.suppressed} of {report.total}")
     print(f"suppression precision: {report.suppression_precision:.2f}")
     print(f"missed true positives: {report.missed_threats}")
     print(f"caught threats:        {report.caught_threats}")

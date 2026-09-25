@@ -90,14 +90,18 @@ def summarize(results: Sequence[CaseResult]) -> Report:
     )
 
 
-def evaluate(cases: Iterable[Case], run: Callable[[Alert], Verdict]) -> Report:
+def run_cases(cases: Iterable[Case], run: Callable[[Alert], Verdict]) -> list[CaseResult]:
     results: list[CaseResult] = []
     for case in cases:
         started = time.monotonic()
         verdict = run(case.alert)
         latency = time.monotonic() - started
         results.append(CaseResult(case=case, verdict=verdict, latency_seconds=latency))
-    return summarize(results)
+    return results
+
+
+def evaluate(cases: Iterable[Case], run: Callable[[Alert], Verdict]) -> Report:
+    return summarize(run_cases(cases, run))
 
 
 def load_cases(path: Path) -> list[Case]:

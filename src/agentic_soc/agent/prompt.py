@@ -13,6 +13,7 @@ from agentic_soc.models import Alert
 
 UNTRUSTED_OPEN = "<untrusted_alert_data>"
 UNTRUSTED_CLOSE = "</untrusted_alert_data>"
+PROMPT_VERSION = "v1"
 
 SYSTEM = (
     "You are a SOC analyst triaging a security alert. Investigate using any "
