@@ -3,7 +3,11 @@
 The endpoint authenticates, validates, enqueues, and returns 202 in
 milliseconds. A background worker runs the full analysis pipeline (environment
 facts -> bounded agent -> policy floors), offloaded to a thread so the event
-loop stays free.
+loop stays free, then writes the verdict to a log that Wazuh ingests.
+
+Verdicts become Wazuh alerts, and high ones are level 12+, above the level-9
+integration threshold. So alerts tagged agentic_soc are ignored here as well as
+in the Wazuh hook: two independent guards against a feedback loop.
 """
 
 from __future__ import annotations
@@ -19,6 +23,7 @@ from fastapi import FastAPI, Header, HTTPException, Request
 from agentic_soc.agent.anthropic_client import AnthropicLLM
 from agentic_soc.agent.llm import LLMClient
 from agentic_soc.agent.loop import analyze_alert
+from agentic_soc.agent.prompt import PROMPT_VERSION
 from agentic_soc.agent.tools import Tool
 from agentic_soc.agent.wazuh_tools import make_search_alerts_tool
 from agentic_soc.auth import verify
@@ -27,8 +32,11 @@ from agentic_soc.config import Settings, get_settings
 from agentic_soc.context import EnvironmentContext, load_context
 from agentic_soc.logging_config import configure_logging
 from agentic_soc.models import Alert
+from agentic_soc.writeback import VerdictLog
 
 logger = logging.getLogger(__name__)
+
+OWN_ALERT_GROUP = "agentic_soc"
 
 
 def _build_default_tools(settings: Settings) -> dict[str, Tool]:
@@ -53,11 +61,21 @@ def _load_default_context(settings: Settings) -> EnvironmentContext | None:
     return context
 
 
+def _build_verdict_log(settings: Settings) -> VerdictLog | None:
+    if not settings.verdict_log_path:
+        logger.warning("verdict writeback disabled (no verdict_log_path)")
+        return None
+    path = Path(settings.verdict_log_path)
+    logger.info("writing verdicts to %s", path)
+    return VerdictLog(path, prompt_version=PROMPT_VERSION, model=settings.model)
+
+
 async def _worker(
     queue: asyncio.Queue[Alert],
     llm: LLMClient,
     tools: dict[str, Tool],
     context: EnvironmentContext | None,
+    verdict_log: VerdictLog | None,
 ) -> None:
     while True:
         alert = await queue.get()
@@ -71,6 +89,8 @@ async def _worker(
                 ",".join(verdict.applied_policies) or "-",
                 verdict.summary,
             )
+            if verdict_log is not None:
+                verdict_log.write(alert, verdict)
         except Exception:
             logger.exception("agent failed for rule=%s", alert.rule.id)
         finally:
@@ -91,9 +111,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     context: EnvironmentContext | None = app.state.context
     if context is None:
         context = _load_default_context(settings)
+    verdict_log = _build_verdict_log(settings)
     queue: asyncio.Queue[Alert] = asyncio.Queue()
     app.state.queue = queue
-    task = asyncio.create_task(_worker(queue, llm, tools, context))
+    task = asyncio.create_task(_worker(queue, llm, tools, context, verdict_log))
     try:
         yield
     finally:
@@ -127,6 +148,9 @@ def create_app(
             alert = Alert.model_validate_json(body)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail="invalid alert") from exc
+        # Feedback-loop guard: never analyse our own verdict alerts.
+        if OWN_ALERT_GROUP in alert.rule.groups:
+            return {"status": "ignored"}
         if alert.rule.level < settings.min_rule_level:
             return {"status": "skipped"}
         await request.app.state.queue.put(alert)

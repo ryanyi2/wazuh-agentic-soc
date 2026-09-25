@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     indexer_verify_tls: bool = False
 
     context_path: str = "context/infrastructure.yaml"
+    verdict_log_path: str = ""
 
 
 def get_settings() -> Settings:
