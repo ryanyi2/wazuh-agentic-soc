@@ -1,0 +1,15 @@
+<!--
+  Add this block inside <ossec_config> in /var/ossec/etc/ossec.conf on the
+  Wazuh manager, then: sudo systemctl restart wazuh-manager
+
+  - hook_url : where the agentic-soc service listens
+  - api_key  : MUST equal AGENTIC_SOC_HMAC_SECRET in the service's .env
+  - level    : only alerts at this level or higher are forwarded
+-->
+<integration>
+  <name>custom-agentic-soc</name>
+  <hook_url>http://127.0.0.1:8080/v1/alerts</hook_url>
+  <api_key>REPLACE_WITH_SHARED_SECRET</api_key>
+  <level>9</level>
+  <alert_format>json</alert_format>
+</integration>

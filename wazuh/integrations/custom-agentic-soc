@@ -1,0 +1,53 @@
+#!/usr/bin/env python3
+"""Wazuh integration hook: forward a fired alert to the agentic-soc service.
+
+Wazuh invokes this once per matching alert:
+    custom-agentic-soc <alert_file> <api_key> <hook_url>
+
+It must return fast. It reads the alert, signs the body with the shared secret
+(passed as api_key), POSTs it to the service, and exits. The service returns 202
+immediately, so this never waits on the agent. Standard library only: it runs
+under the manager's Python with no virtualenv.
+"""
+
+import hashlib
+import hmac
+import json
+import sys
+import urllib.request
+
+
+def main() -> int:
+    if len(sys.argv) < 4:
+        return 0  # missing args: do nothing rather than error the integrator
+
+    alert_file, secret, hook_url = sys.argv[1], sys.argv[2], sys.argv[3]
+
+    with open(alert_file, "rb") as handle:
+        body = handle.read()
+
+    # Feedback-loop guard: never forward our own verdicts back for analysis.
+    try:
+        groups = json.loads(body).get("rule", {}).get("groups", [])
+        if "agentic_soc" in groups:
+            return 0
+    except (ValueError, AttributeError):
+        pass
+
+    signature = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+    request = urllib.request.Request(
+        hook_url,
+        data=body,
+        headers={"Content-Type": "application/json", "X-Signature": signature},
+        method="POST",
+    )
+    try:
+        urllib.request.urlopen(request, timeout=5)
+    except Exception:
+        # A dropped forward must never crash Wazuh; the service logs gaps itself.
+        return 0
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
