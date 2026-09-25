@@ -51,3 +51,17 @@ chooses the username. Probe: failed logins to `ryanyi` from an untrusted host
   held-out set that is never tuned on.
 - Triage reduction depends on the benign/malicious mix of the dataset. A real
   SOC queue is mostly benign, so this percentage is not a production estimate.
+
+## Cost
+
+Measured on the development set (7 cases x 3 runs = 21 analyses), metering
+every model call:
+
+| Model | Input tokens per alert | Output tokens per alert | Cost per alert |
+|---|---|---|---|
+| claude-haiku-4-5 | 2,937 | 397 | $0.0049 |
+
+At that rate, 1,000 alerts a day costs about $4.90 a day. Prompt caching was
+considered and not used: Claude Haiku 4.5 only caches prompt prefixes of at
+least 4,096 tokens, and an entire request here averages under 3,000 tokens.
+The meter reported 0 cached tokens, which confirms it.
