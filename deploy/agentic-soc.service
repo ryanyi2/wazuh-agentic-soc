@@ -1,0 +1,36 @@
+# systemd unit for the agentic-soc analyzer.
+#
+# Install:
+#   sudo cp deploy/agentic-soc.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now agentic-soc
+#
+# Edit User, Group and the /home/ryanyi paths to match your install. Settings
+# come from .env in WorkingDirectory, exactly as when running uvicorn by hand.
+
+[Unit]
+Description=Agentic SOC analyzer for Wazuh alerts
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=ryanyi
+Group=ryanyi
+WorkingDirectory=/home/ryanyi/wazuh-agentic-soc
+ExecStart=/home/ryanyi/wazuh-agentic-soc/.venv/bin/uvicorn agentic_soc.api:app --host 127.0.0.1 --port 8080
+Environment=PYTHONUNBUFFERED=1
+Restart=on-failure
+RestartSec=5
+
+# Least privilege at the OS level. The analyzer only reads Wazuh (over HTTPS)
+# and appends to its verdict log, so that log directory is the only place on
+# disk it may write.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/log/agentic-soc
+
+[Install]
+WantedBy=multi-user.target
