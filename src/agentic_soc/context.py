@@ -12,6 +12,9 @@ Two jobs, deliberately kept separate:
    out of things, an if statement cannot. Policies never suppress on their own,
    because an auto-suppress rule is a blind spot an attacker can aim for, while
    an escalation rule can only cost an analyst some time.
+
+Escalation rules fail closed: an alert without a usable source IP counts as
+coming from outside the trusted networks.
 """
 
 from __future__ import annotations
@@ -46,6 +49,15 @@ def _parse_ip(value: str | None) -> ipaddress.IPv4Address | ipaddress.IPv6Addres
         return None
 
 
+def _alert_users(alert: Alert) -> set[str]:
+    users: set[str] = set()
+    if alert.data:
+        for candidate in (alert.data.srcuser, alert.data.dstuser):
+            if candidate:
+                users.add(candidate)
+    return users
+
+
 class Admin(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -76,6 +88,7 @@ class PolicyCondition(BaseModel):
     rule_groups_any: list[str] = Field(default_factory=list)
     aggregated: bool | None = None
     source_outside_trusted: bool | None = None
+    target_is_admin: bool | None = None
 
     @model_validator(mode="after")
     def _require_a_condition(self) -> PolicyCondition:
@@ -83,6 +96,7 @@ class PolicyCondition(BaseModel):
             not self.rule_groups_any
             and self.aggregated is None
             and self.source_outside_trusted is None
+            and self.target_is_admin is None
         ):
             raise ValueError("a policy must set at least one condition")
         return self
@@ -111,14 +125,13 @@ class EnvironmentContext(BaseModel):
             return False
         return any(address in net.cidr for net in self.trusted_networks)
 
+    def is_admin(self, user: str) -> bool:
+        return any(admin.user == user for admin in self.admins)
+
     def notes_for(self, alert: Alert) -> list[str]:
         """Facts relevant to this alert, for the model's trusted context block."""
         notes: list[str] = []
-        users: set[str] = set()
-        if alert.data:
-            for candidate in (alert.data.srcuser, alert.data.dstuser):
-                if candidate:
-                    users.add(candidate)
+        users = _alert_users(alert)
         for admin in self.admins:
             if admin.user in users:
                 notes.append(
@@ -143,8 +156,13 @@ class EnvironmentContext(BaseModel):
         if condition.aggregated is not None and alert.is_aggregated != condition.aggregated:
             return False
         if condition.source_outside_trusted is not None:
-            outside = alert.source_ip is not None and not self.is_trusted_source(alert.source_ip)
+            # Fail closed: no usable source IP means we cannot call it trusted.
+            outside = not self.is_trusted_source(alert.source_ip)
             if outside != condition.source_outside_trusted:
+                return False
+        if condition.target_is_admin is not None:
+            targets_admin = any(self.is_admin(user) for user in _alert_users(alert))
+            if targets_admin != condition.target_is_admin:
                 return False
         return True
 

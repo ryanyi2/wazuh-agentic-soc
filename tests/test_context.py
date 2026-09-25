@@ -100,3 +100,58 @@ def test_typo_in_context_file_is_rejected() -> None:
 def test_repo_context_file_is_valid() -> None:
     context = load_context(REPO / "context" / "infrastructure.yaml")
     assert {p.name for p in context.policies} >= {"brute-force-floor", "external-login-success"}
+
+
+ADMIN_CONTEXT = EnvironmentContext.model_validate(
+    {
+        "admins": [{"user": "ryanyi"}],
+        "trusted_networks": [{"cidr": "127.0.0.0/8"}],
+        "policies": [
+            {
+                "name": "admin-auth-failure-from-untrusted-source",
+                "when": {
+                    "rule_groups_any": ["authentication_failed"],
+                    "target_is_admin": True,
+                    "source_outside_trusted": True,
+                },
+                "min_risk": "medium",
+            }
+        ],
+    }
+)
+
+
+def test_admin_failure_from_untrusted_host_is_escalated() -> None:
+    alert = _login("192.168.64.2", ["authentication_failed"])
+    result = ADMIN_CONTEXT.apply_policies(alert, _verdict(RiskLevel.FALSE_POSITIVE))
+    assert result.risk_level is RiskLevel.MEDIUM
+    assert result.applied_policies == ["admin-auth-failure-from-untrusted-source"]
+
+
+def test_admin_failure_from_trusted_host_is_left_to_the_model() -> None:
+    alert = _login("127.0.0.1", ["authentication_failed"])
+    result = ADMIN_CONTEXT.apply_policies(alert, _verdict(RiskLevel.FALSE_POSITIVE))
+    assert result.risk_level is RiskLevel.FALSE_POSITIVE
+
+
+def test_non_admin_failure_is_left_to_the_model() -> None:
+    alert = _login("192.168.64.2", ["authentication_failed"], user="mallory")
+    result = ADMIN_CONTEXT.apply_policies(alert, _verdict(RiskLevel.LOW))
+    assert result.risk_level is RiskLevel.LOW
+
+
+def test_missing_source_ip_counts_as_untrusted() -> None:
+    alert = Alert.model_validate(
+        {
+            "rule": {
+                "id": "2502",
+                "level": 10,
+                "description": "x",
+                "groups": ["authentication_failed"],
+            },
+            "agent": {"id": "000"},
+            "data": {"dstuser": "ryanyi"},
+        }
+    )
+    result = ADMIN_CONTEXT.apply_policies(alert, _verdict(RiskLevel.FALSE_POSITIVE))
+    assert result.risk_level is RiskLevel.MEDIUM

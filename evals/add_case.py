@@ -1,29 +1,31 @@
-"""Append a labelled case to the eval dataset from a captured alert JSON file.
+"""Append a labelled case to an eval dataset from a captured alert JSON file.
 
 Usage:
     python evals/add_case.py <alert.json> <true_positive|false_positive> "<reason>"
+        [--dataset evals/holdout.jsonl]
 """
 
 from __future__ import annotations
 
+import argparse
 import json
-import sys
 from pathlib import Path
-
-VALID = {"true_positive", "false_positive"}
 
 
 def main() -> int:
-    if len(sys.argv) != 4 or sys.argv[2] not in VALID:
-        print(__doc__)
-        return 1
-    alert_path, label, reason = sys.argv[1], sys.argv[2], sys.argv[3]
-    alert = json.loads(Path(alert_path).read_text())
-    row = {"alert": alert, "label": label, "reason": reason}
-    dataset = Path("evals/dataset.jsonl")
+    parser = argparse.ArgumentParser(description="Append a labelled case to an eval dataset.")
+    parser.add_argument("alert", help="path to a captured alert JSON file")
+    parser.add_argument("label", choices=["true_positive", "false_positive"])
+    parser.add_argument("reason", help="why this label is correct")
+    parser.add_argument("--dataset", default="evals/dataset.jsonl")
+    args = parser.parse_args()
+
+    alert = json.loads(Path(args.alert).read_text())
+    row = {"alert": alert, "label": args.label, "reason": args.reason}
+    dataset = Path(args.dataset)
     with dataset.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(row) + "\n")
-    print(f"added {label} case -> {dataset}")
+    print(f"added {args.label} case -> {dataset}")
     return 0
 
 

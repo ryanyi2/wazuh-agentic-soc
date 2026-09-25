@@ -37,3 +37,11 @@ policies:
       rule_groups_any: [authentication_success]
       source_outside_trusted: true
     min_risk: high
+
+  - name: admin-auth-failure-from-untrusted-source
+    description: Failed logins to an admin account from outside the trusted networks always get review.
+    when:
+      rule_groups_any: [authentication_failed, authentication_failures]
+      target_is_admin: true
+      source_outside_trusted: true
+    min_risk: medium
