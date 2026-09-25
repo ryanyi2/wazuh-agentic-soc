@@ -13,6 +13,7 @@ from typing import Any, cast
 import anthropic
 
 from agentic_soc.agent.llm import LLMResponse, Message, ToolCall, ToolSpec
+from agentic_soc.cost import Usage
 
 
 def _to_anthropic(messages: Sequence[Message]) -> tuple[str, list[dict[str, Any]]]:
@@ -58,7 +59,13 @@ def _from_anthropic(response: anthropic.types.Message) -> LLMResponse:
         elif isinstance(block, anthropic.types.ToolUseBlock):
             arguments = cast("dict[str, Any]", block.input)
             tool_calls.append(ToolCall(id=block.id, name=block.name, arguments=arguments))
-    return LLMResponse(text="\n".join(text_parts) or None, tool_calls=tool_calls)
+    usage = Usage(
+        input_tokens=response.usage.input_tokens,
+        output_tokens=response.usage.output_tokens,
+        cache_write_tokens=response.usage.cache_creation_input_tokens or 0,
+        cache_read_tokens=response.usage.cache_read_input_tokens or 0,
+    )
+    return LLMResponse(text="\n".join(text_parts) or None, tool_calls=tool_calls, usage=usage)
 
 
 class AnthropicLLM:

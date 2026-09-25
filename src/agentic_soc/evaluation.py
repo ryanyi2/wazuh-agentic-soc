@@ -3,8 +3,9 @@
 A labelled case pairs a real Wazuh alert with a ground-truth label
 (true_positive or false_positive) and a human reason. The harness runs the agent
 over each case and reports the metrics that matter for triage: how much volume
-it removes, how often it is right when it suppresses, and — the cardinal safety
-metric, tracked on its own — how many real threats it wrongly suppressed.
+it removes, how often it is right when it suppresses, how many real threats it
+wrongly suppressed (the cardinal safety metric, tracked on its own), and what
+each analysis costs in tokens.
 """
 
 from __future__ import annotations
@@ -12,10 +13,11 @@ from __future__ import annotations
 import json
 import time
 from collections.abc import Callable, Iterable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 
+from agentic_soc.cost import Usage
 from agentic_soc.models import Alert, Verdict
 
 
@@ -36,6 +38,7 @@ class CaseResult:
     case: Case
     verdict: Verdict
     latency_seconds: float
+    usage: Usage = field(default_factory=Usage)
 
     @property
     def suppressed(self) -> bool:
@@ -60,6 +63,7 @@ class Report:
     caught_threats: int
     benign_total: int
     mean_latency_seconds: float
+    total_usage: Usage = field(default_factory=Usage)
 
     @property
     def suppression_precision(self) -> float:
@@ -82,30 +86,35 @@ class Report:
 
 def summarize(results: Sequence[CaseResult]) -> Report:
     total = len(results)
-    suppressed = sum(1 for r in results if r.suppressed)
-    correct = sum(1 for r in results if r.suppressed and r.is_benign)
-    missed = sum(1 for r in results if r.missed_threat)
-    caught = sum(1 for r in results if not r.suppressed and not r.is_benign)
-    benign_total = sum(1 for r in results if r.is_benign)
-    mean_latency = sum(r.latency_seconds for r in results) / total if total else 0.0
+    total_usage = Usage()
+    for r in results:
+        total_usage.add(r.usage)
     return Report(
         total=total,
-        suppressed=suppressed,
-        correct_suppressions=correct,
-        missed_threats=missed,
-        caught_threats=caught,
-        benign_total=benign_total,
-        mean_latency_seconds=mean_latency,
+        suppressed=sum(1 for r in results if r.suppressed),
+        correct_suppressions=sum(1 for r in results if r.suppressed and r.is_benign),
+        missed_threats=sum(1 for r in results if r.missed_threat),
+        caught_threats=sum(1 for r in results if not r.suppressed and not r.is_benign),
+        benign_total=sum(1 for r in results if r.is_benign),
+        mean_latency_seconds=sum(r.latency_seconds for r in results) / total if total else 0.0,
+        total_usage=total_usage,
     )
 
 
-def run_cases(cases: Iterable[Case], run: Callable[[Alert], Verdict]) -> list[CaseResult]:
+def run_cases(
+    cases: Iterable[Case],
+    run: Callable[[Alert], Verdict],
+    usage_source: Callable[[], Usage] | None = None,
+) -> list[CaseResult]:
     results: list[CaseResult] = []
     for case in cases:
         started = time.monotonic()
         verdict = run(case.alert)
         latency = time.monotonic() - started
-        results.append(CaseResult(case=case, verdict=verdict, latency_seconds=latency))
+        usage = usage_source() if usage_source is not None else Usage()
+        results.append(
+            CaseResult(case=case, verdict=verdict, latency_seconds=latency, usage=usage)
+        )
     return results
 
 

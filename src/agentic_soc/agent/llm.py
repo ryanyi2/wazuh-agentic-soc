@@ -11,6 +11,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
+from agentic_soc.cost import Usage
+
 
 @dataclass
 class ToolSpec:
@@ -38,6 +40,7 @@ class Message:
 class LLMResponse:
     text: str | None = None
     tool_calls: list[ToolCall] = field(default_factory=list)
+    usage: Usage = field(default_factory=Usage)
 
 
 class LLMClient(Protocol):

@@ -6,7 +6,8 @@ Usage:
 Runs the same pipeline as the live service (environment facts -> agent ->
 policy floors). LLM output can vary between runs, so --repeat runs every case
 N times and reports pooled metrics plus the per-run spread. --no-context runs
-without the environment context file, for a with/without comparison.
+without the environment context file, for a with/without comparison. Every
+model call is metered, so cost per alert is measured rather than estimated.
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ from pathlib import Path
 
 from agentic_soc.agent.anthropic_client import AnthropicLLM
 from agentic_soc.agent.loop import analyze_alert
+from agentic_soc.agent.metering import MeteredLLM
 from agentic_soc.agent.prompt import PROMPT_VERSION
 from agentic_soc.agent.wazuh_tools import make_search_alerts_tool
 from agentic_soc.clients.indexer import IndexerClient
@@ -44,7 +46,9 @@ def main() -> int:
 
     cases = load_cases(Path(args.dataset))
     settings = get_settings()
-    llm = AnthropicLLM(settings.anthropic_api_key, settings.model, settings.max_tokens)
+    meter = MeteredLLM(
+        AnthropicLLM(settings.anthropic_api_key, settings.model, settings.max_tokens)
+    )
 
     tools = {}
     if settings.indexer_url:
@@ -62,14 +66,14 @@ def main() -> int:
         context = load_context(context_path)
 
     def run(alert: Alert) -> Verdict:
-        return analyze_alert(alert, llm, tools, context)
+        return analyze_alert(alert, meter, tools, context)
 
     context_label = str(context_path) if context is not None else "none"
     print(
         f"prompt {PROMPT_VERSION} | model {settings.model} | context {context_label} | "
         f"{len(cases)} cases x {args.repeat} runs\n"
     )
-    runs = [run_cases(cases, run) for _ in range(args.repeat)]
+    runs = [run_cases(cases, run, meter.take) for _ in range(args.repeat)]
 
     for i, case in enumerate(cases):
         results = [run_results[i] for run_results in runs]
@@ -102,6 +106,18 @@ def main() -> int:
     print(f"missed true positives: {pooled.missed_threats}")
     print(f"caught threats:        {pooled.caught_threats}")
     print(f"mean latency:          {pooled.mean_latency_seconds:.1f}s")
+    if pooled.total:
+        usage = pooled.total_usage
+        cost = usage.cost_usd(settings.model)
+        print(
+            f"tokens per alert:      {usage.total_input_tokens / pooled.total:.0f} in, "
+            f"{usage.output_tokens / pooled.total:.0f} out  "
+            f"(cache: {usage.cache_write_tokens} written, {usage.cache_read_tokens} read)"
+        )
+        print(
+            f"cost per alert:        ${cost / pooled.total:.4f}  "
+            f"(total ${cost:.4f} for {pooled.total} analyses)"
+        )
     return 0
 
 
