@@ -1,0 +1,39 @@
+# Environment context for the agentic SOC analyst.
+#
+# Everything here is written by the defenders and is TRUSTED, unlike alert
+# fields, which may be attacker-controlled. Keep entries factual: describe who
+# and what is in the environment, and let the model reason from those facts.
+# Only entries relevant to a given alert are sent to the model.
+
+admins:
+  - user: ryanyi
+    note: Lab administrator; logs in interactively on the Wazuh manager.
+
+trusted_networks:
+  - cidr: 127.0.0.0/8
+    note: Loopback on the Wazuh manager.
+
+hosts:
+  - agent_id: "000"
+    name: ryanyi
+    role: Wazuh manager (Ubuntu VM), administered by ryanyi.
+  - agent_id: "001"
+    name: kali-vm
+    role: Kali Linux VM used as a security-testing workstation.
+
+# Policies set a minimum risk level in code, after the model answers.
+# They can only raise a verdict, never lower it.
+policies:
+  - name: brute-force-floor
+    description: Correlated authentication-failure alerts are never rated below high.
+    when:
+      rule_groups_any: [authentication_failures, authentication_failed]
+      aggregated: true
+    min_risk: high
+
+  - name: external-login-success
+    description: A successful login from outside the trusted networks always gets review.
+    when:
+      rule_groups_any: [authentication_success]
+      source_outside_trusted: true
+    min_risk: high

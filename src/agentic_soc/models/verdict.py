@@ -30,6 +30,8 @@ class Verdict(BaseModel):
     root_cause: str  # what most likely happened
     mitre_techniques: list[str] = Field(default_factory=list)
     recommended_actions: list[str] = Field(default_factory=list)
+    # Names of code-enforced policies that raised this verdict (see agentic_soc.context).
+    applied_policies: list[str] = Field(default_factory=list)
 
     @property
     def requires_attention(self) -> bool:
