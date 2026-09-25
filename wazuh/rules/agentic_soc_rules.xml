@@ -1,0 +1,48 @@
+<!--
+  Turns agentic-soc verdict log lines into native Wazuh alerts.
+  Install to /var/ossec/etc/rules/agentic_soc_rules.xml (owned wazuh:wazuh),
+  then restart the manager. Requires a <localfile> reading the verdict log as
+  json (see ossec.conf.verdict-localfile.xml). Every rule is in group
+  "agentic_soc" so the hook and the API both drop these alerts and never
+  re-analyse a verdict.
+-->
+<group name="agentic_soc,">
+
+  <!-- Anchor: any agentic-soc verdict. Level 0 never alerts on its own. -->
+  <rule id="100010" level="0">
+    <decoded_as>json</decoded_as>
+    <field name="agentic_soc.risk_level">\.+</field>
+    <description>Agentic SOC analyst verdict.</description>
+  </rule>
+
+  <rule id="100011" level="3">
+    <if_sid>100010</if_sid>
+    <field name="agentic_soc.risk_level">^false_positive$</field>
+    <description>Agentic SOC: likely false positive - $(agentic_soc.summary)</description>
+  </rule>
+
+  <rule id="100012" level="5">
+    <if_sid>100010</if_sid>
+    <field name="agentic_soc.risk_level">^low$</field>
+    <description>Agentic SOC: low risk - $(agentic_soc.summary)</description>
+  </rule>
+
+  <rule id="100013" level="8">
+    <if_sid>100010</if_sid>
+    <field name="agentic_soc.risk_level">^medium$</field>
+    <description>Agentic SOC: medium risk - $(agentic_soc.summary)</description>
+  </rule>
+
+  <rule id="100014" level="12">
+    <if_sid>100010</if_sid>
+    <field name="agentic_soc.risk_level">^high$</field>
+    <description>Agentic SOC: HIGH risk - $(agentic_soc.summary)</description>
+  </rule>
+
+  <rule id="100015" level="14">
+    <if_sid>100010</if_sid>
+    <field name="agentic_soc.risk_level">^critical$</field>
+    <description>Agentic SOC: CRITICAL risk - $(agentic_soc.summary)</description>
+  </rule>
+
+</group>
