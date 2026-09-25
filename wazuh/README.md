@@ -31,3 +31,6 @@ Add the block in `ossec.conf.verdict-localfile.xml` inside `<ossec_config>` in
 risk_level to Wazuh level (false_positive 3, low 5, medium 8, high 12,
 critical 14) and sit in group `agentic_soc`, which the hook and API both drop
 so a verdict is never re-analysed.
+
+Verdict alerts use `no_full_log`. Every field is already decoded under
+`agentic_soc.*`, so the raw JSON line would only repeat it in the dashboard.
